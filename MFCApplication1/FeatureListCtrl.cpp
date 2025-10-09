@@ -23,7 +23,7 @@ int CFeatureListCtrl::hitIndexFromPoint(CPoint pt) const
     LVHITTESTINFO ht{};
     ht.pt = pt;
     const_cast<CFeatureListCtrl*>(this)->SubItemHitTest(&ht);
-    if (ht.iItem >= 0 && (ht.flags & (LVHT_ONITEM | LVHT_ONITEMSTATEICON | LVHT_ONITEMLABEL)))
+    if (ht.iItem >= 0 && (ht.flags & (LVHT_ONITEMICON | LVHT_ONITEMLABEL)))
         return ht.iItem;
     return -1;
 }
