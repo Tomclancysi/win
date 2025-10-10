@@ -83,28 +83,15 @@ void CFeatureSelectorDlg::initializeData()
 {
     // 示例数据，可替换为实际数据来源
     m_allFeatures.clear();
-    m_allFeatures.push_back({ _T("EdgeStyleId"), _T("EdgeStyleId"), FeatureCategory::Effect3D, true });
-    m_allFeatures.push_back({ _T("FaceStyleId"), _T("FaceStyleId"), FeatureCategory::Effect3D, true });
-    m_allFeatures.push_back({ _T("VisualStyleId"), _T("VisualStyleId"), FeatureCategory::Effect3D, true });
-    m_allFeatures.push_back({ _T("半径"), _T("半径"), FeatureCategory::Geometry, true });
-    m_allFeatures.push_back({ _T("布尔"), _T("布尔"), FeatureCategory::Other, true });
-    m_allFeatures.push_back({ _T("材质"), _T("材质"), FeatureCategory::Effect3D, true });
+    m_allFeatures.push_back({ _T("Alpha"), _T("EdgeStyleId"), FeatureCategory::Effect3D, true });
+    m_allFeatures.push_back({ _T("Gamma"), _T("FaceStyleId"), FeatureCategory::Effect3D, true });
+    m_allFeatures.push_back({ _T("Beta"), _T("VisualStyleId"), FeatureCategory::Effect3D, true });
+    m_allFeatures.push_back({ _T("Circle"), _T("半径"), FeatureCategory::Geometry, true });
+    m_allFeatures.push_back({ _T("Edge"), _T("布尔"), FeatureCategory::Other, true });
+    m_allFeatures.push_back({ _T("Random"), _T("材质"), FeatureCategory::Effect3D, true });
     m_allFeatures.push_back({ _T("超链接地址"), _T("超链接地址"), FeatureCategory::Graphic, true });
     m_allFeatures.push_back({ _T("关键字"), _T("关键字"), FeatureCategory::General, true });
     m_allFeatures.push_back({ _T("全局属性"), _T("全局属性"), FeatureCategory::General, true });
-}
-
-CString CFeatureSelectorDlg::categoryToText(FeatureCategory c) const
-{
-    switch (c)
-    {
-    case FeatureCategory::General: return _T("常规");
-    case FeatureCategory::Geometry: return _T("几何图形");
-    case FeatureCategory::Other: return _T("其它");
-    case FeatureCategory::Effect3D: return _T("三维效果");
-    case FeatureCategory::Graphic: return _T("图形");
-    }
-    return _T("");
 }
 
 void CFeatureSelectorDlg::refreshFeaturesView()
@@ -118,8 +105,9 @@ void CFeatureSelectorDlg::refreshFeaturesView()
 
         int idx = m_listFeatures.InsertItem(row, f.attribute);
         m_listFeatures.SetItemText(idx, 1, f.displayName);
-        m_listFeatures.SetItemText(idx, 2, categoryToText(f.category));
-        m_listFeatures.SetItemData(idx, idx);
+        CString categoryText = categoryToText(f.category);
+        m_listFeatures.SetItemText(idx, 2, categoryText);
+        m_listFeatures.SetItemData(idx, (DWORD_PTR)&f);
         m_listFeatures.SetCheck(idx, f.selected);
         ++row;
     }

@@ -1,4 +1,4 @@
-#include "pch.h"
+﻿#include "pch.h"
 #include "framework.h"
 #include "FeatureListCtrl.h"
 #include <algorithm>
@@ -136,9 +136,22 @@ int CALLBACK CFeatureListCtrl::CompareFunc(LPARAM lParam1, LPARAM lParam2, LPARA
     int col = pThis->m_sortCol;
     bool asc = pThis->m_sortAsc;
 
-    CString str1 = pThis->GetItemText((int)lParam1, col);
-    CString str2 = pThis->GetItemText((int)lParam2, col);
-    int cmp = str1.Compare(str2);
+	FeatureItem* feat1 = (FeatureItem*)lParam1;
+	FeatureItem* feat2 = (FeatureItem*)lParam2;
+
+    int cmp = 0;
+    switch (col)
+    {
+    case 0:
+        cmp = feat1->attribute.Compare(feat2->attribute);
+        break;
+    case 1:
+        cmp = feat1->displayName.Compare(feat2->displayName);
+        break;
+    case 2:
+        cmp = categoryToText(feat1->category).Compare(categoryToText(feat2->category));
+        break;
+    }
     return asc ? cmp : -cmp;
 }
 
@@ -160,3 +173,15 @@ void CFeatureListCtrl::updateHeaderSortArrow()
 }
 
 
+CString categoryToText(FeatureCategory c)
+{
+	switch (c)
+	{
+	case FeatureCategory::General: return _T("常规");
+	case FeatureCategory::Geometry: return _T("几何图形");
+	case FeatureCategory::Other: return _T("其它");
+	case FeatureCategory::Effect3D: return _T("三维效果");
+	case FeatureCategory::Graphic: return _T("图形");
+	}
+	return _T("");
+}

@@ -2,6 +2,25 @@
 
 #include "framework.h"
 
+enum class FeatureCategory
+{
+	General,
+	Geometry,
+	Other,
+	Effect3D,
+	Graphic
+};
+
+struct FeatureItem
+{
+	CString attribute;
+	CString displayName;
+	FeatureCategory category;
+	bool selected;
+};
+
+CString categoryToText(FeatureCategory c);
+
 class CFeatureListCtrl : public CListCtrl
 {
 public:

@@ -6,23 +6,6 @@
 #include "Resource.h"
 #include "FeatureListCtrl.h"
 
-enum class FeatureCategory
-{
-    General,
-    Geometry,
-    Other,
-    Effect3D,
-    Graphic
-};
-
-struct FeatureItem
-{
-    CString attribute;
-    CString displayName;
-    FeatureCategory category;
-    bool selected;
-};
-
 class CFeatureSelectorDlg : public CDialogEx
 {
 public:
@@ -51,7 +34,6 @@ private:
     void setupFeaturesList();
     void setupFiltersList();
     void refreshFeaturesView();
-    CString categoryToText(FeatureCategory c) const;
 
     afx_msg void OnContextMenu(CWnd* pWnd, CPoint point);
     afx_msg void OnSelectAll();
