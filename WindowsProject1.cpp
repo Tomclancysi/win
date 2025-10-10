@@ -109,6 +109,10 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    {// 设置scroll range
 	   SetScrollRange(hWnd, SB_VERT, 0, 5, TRUE);
 	   SetScrollRange(hWnd, SB_HORZ, 0, 5, TRUE);
+	   // SetScrollInfo同样可以设置滚动条信息，并且更加灵活
+       SCROLLINFO si;
+	   si.cbSize = sizeof(SCROLLBARINFO);
+	   
    }
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
@@ -243,6 +247,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         SetScrollPos(hWnd, SB_VERT, scrollPos, TRUE);
         InvalidateRect(hWnd, NULL, TRUE); // 重绘窗口
 	}
+        break;
+    case WM_SIZE:
+    {
+		// 当初始化窗口之后，会触发WM_SIZE消息，所以在此处可以记载一些大小信息
+		int width = LOWORD(lParam);
+		int height = HIWORD(lParam);
+
+    }
+        break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }

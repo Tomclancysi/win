@@ -119,6 +119,7 @@ void CFeatureSelectorDlg::refreshFeaturesView()
         int idx = m_listFeatures.InsertItem(row, f.attribute);
         m_listFeatures.SetItemText(idx, 1, f.displayName);
         m_listFeatures.SetItemText(idx, 2, categoryToText(f.category));
+        m_listFeatures.SetItemData(idx, idx);
         m_listFeatures.SetCheck(idx, f.selected);
         ++row;
     }

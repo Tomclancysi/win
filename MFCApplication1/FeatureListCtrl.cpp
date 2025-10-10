@@ -16,6 +16,7 @@ BEGIN_MESSAGE_MAP(CFeatureListCtrl, CListCtrl)
     ON_WM_LBUTTONDOWN()
     ON_WM_MOUSEMOVE()
     ON_WM_LBUTTONUP()
+    ON_NOTIFY_REFLECT(LVN_COLUMNCLICK, OnHeaderClick)
 END_MESSAGE_MAP()
 
 int CFeatureListCtrl::hitIndexFromPoint(CPoint pt) const
@@ -109,6 +110,53 @@ void CFeatureListCtrl::OnLButtonUp(UINT nFlags, CPoint point)
         m_lastMin = m_lastMax = -1; // 完成一次拖选
     }
     CListCtrl::OnLButtonUp(nFlags, point);
+}
+
+void CFeatureListCtrl::OnHeaderClick(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	NMLISTVIEW* pNMListView = (NMLISTVIEW*)pNMHDR;
+	int col = pNMListView->iSubItem; // 点击的列索引
+
+    if (m_sortCol == col)
+        m_sortAsc = !m_sortAsc;
+    else {
+        m_sortCol = col;
+        m_sortAsc = true;
+    }
+    // 排序
+    SortItems(CompareFunc, (LPARAM)this);
+    // 更新header箭头
+    updateHeaderSortArrow();
+    *pResult = 0;
+}
+
+int CALLBACK CFeatureListCtrl::CompareFunc(LPARAM lParam1, LPARAM lParam2, LPARAM lParamSort)
+{
+    CFeatureListCtrl* pThis = (CFeatureListCtrl*)lParamSort;
+    int col = pThis->m_sortCol;
+    bool asc = pThis->m_sortAsc;
+
+    CString str1 = pThis->GetItemText((int)lParam1, col);
+    CString str2 = pThis->GetItemText((int)lParam2, col);
+    int cmp = str1.Compare(str2);
+    return asc ? cmp : -cmp;
+}
+
+void CFeatureListCtrl::updateHeaderSortArrow()
+{
+    CHeaderCtrl* pHeader = GetHeaderCtrl();
+    if (!pHeader) return;
+    int nColCount = pHeader->GetItemCount();
+    for (int i = 0; i < nColCount; ++i)
+    {
+        HDITEM hdi = { 0 };
+        hdi.mask = HDI_FORMAT;
+        pHeader->GetItem(i, &hdi);
+        hdi.fmt &= ~(HDF_SORTUP | HDF_SORTDOWN);
+        if (i == m_sortCol)
+            hdi.fmt |= m_sortAsc ? HDF_SORTUP : HDF_SORTDOWN;
+        pHeader->SetItem(i, &hdi);
+    }
 }
 
 
