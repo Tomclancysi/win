@@ -40,6 +40,7 @@ private:
     afx_msg void OnSelectNone();
     afx_msg void OnSelectInvert();
     afx_msg void OnFilterItemChanged(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnFeatureItemChanged(NMHDR* pNMHDR, LRESULT* pResult);
 };
 
 
