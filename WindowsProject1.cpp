@@ -88,6 +88,27 @@ void DetectDisplayMonitorsSimple()
 	}
 }
 
+void GetScreenInfo()
+{
+	HDC hdc = GetDC(NULL);
+
+	// 获取屏幕分辨率（逻辑像素）
+	int screenWidth = GetDeviceCaps(hdc, HORZRES);    // 1920
+	int screenHeight = GetDeviceCaps(hdc, VERTRES);   // 1080
+
+	// 获取逻辑DPI
+	int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);        // 96
+	int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);        // 96
+
+	std::wstringstream ss;
+	ss << L"屏幕分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
+	ss << L"逻辑DPI: " << dpiX << L" x " << dpiY << L"\n";
+
+	OutputDebugString(ss.str().c_str());
+
+	ReleaseDC(NULL, hdc);
+}
+
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
@@ -200,6 +221,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    UpdateWindow(hWnd);
 
    DetectDisplayMonitors(); // 检测显示器信息
+   GetScreenInfo();
 
    return TRUE;
 }
