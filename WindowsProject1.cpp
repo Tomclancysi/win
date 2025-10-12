@@ -3,8 +3,90 @@
 
 #include "framework.h"
 #include "WindowsProject1.h"
+#include <sstream>
+#include <vector>
 
 #define MAX_LOADSTRING 100
+
+//
+
+// 回调函数，用于枚举显示器
+BOOL CALLBACK MonitorEnumProc(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData)
+{
+	std::vector<MONITORINFOEX>* monitors = reinterpret_cast<std::vector<MONITORINFOEX>*>(dwData);
+
+	MONITORINFOEX monitorInfo;
+	monitorInfo.cbSize = sizeof(MONITORINFOEX);
+
+	if (GetMonitorInfo(hMonitor, &monitorInfo))
+	{
+		monitors->push_back(monitorInfo);
+	}
+
+	return TRUE; // 继续枚举
+}
+
+// 主函数：检测显示器数量和分辨率
+void DetectDisplayMonitors()
+{
+	std::vector<MONITORINFOEX> monitors;
+
+	// 枚举所有显示器
+	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
+
+	// 输出显示器数量
+	std::wstringstream ss;
+	ss << L"检测到 " << monitors.size() << L" 个显示器\n";
+	OutputDebugString(ss.str().c_str());
+
+	// 输出每个显示器的信息
+	for (size_t i = 0; i < monitors.size(); ++i)
+	{
+		std::wstringstream monitorInfo;
+		monitorInfo << L"显示器 " << (i + 1) << L":\n";
+		monitorInfo << L"  设备名称: " << monitors[i].szDevice << L"\n";
+		monitorInfo << L"  分辨率: " << (monitors[i].rcMonitor.right - monitors[i].rcMonitor.left)
+			<< L" x " << (monitors[i].rcMonitor.bottom - monitors[i].rcMonitor.top) << L"\n";
+		monitorInfo << L"  位置: (" << monitors[i].rcMonitor.left << L", " << monitors[i].rcMonitor.top
+			<< L") 到 (" << monitors[i].rcMonitor.right << L", " << monitors[i].rcMonitor.bottom << L")\n";
+
+		if (monitors[i].dwFlags & MONITORINFOF_PRIMARY)
+		{
+			monitorInfo << L"  主显示器: 是\n";
+		}
+		else
+		{
+			monitorInfo << L"  主显示器: 否\n";
+		}
+
+		monitorInfo << L"\n";
+		OutputDebugString(monitorInfo.str().c_str());
+	}
+}
+
+// 简化版本（如果只需要基本分辨率信息）
+void DetectDisplayMonitorsSimple()
+{
+	// 获取系统DC
+	HDC hdc = GetDC(NULL);
+	if (hdc)
+	{
+		int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+		int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+		int virtualWidth = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+		int virtualHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+		int monitorCount = GetSystemMetrics(SM_CMONITORS);
+
+		std::wstringstream ss;
+		ss << L"显示器数量: " << monitorCount << L"\n";
+		ss << L"主显示器分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
+		ss << L"虚拟屏幕大小: " << virtualWidth << L" x " << virtualHeight << L"\n";
+
+		OutputDebugString(ss.str().c_str());
+
+		ReleaseDC(NULL, hdc);
+	}
+}
 
 // 全局变量:
 HINSTANCE hInst;                                // 当前实例
@@ -116,6 +198,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
    ShowWindow(hWnd, nCmdShow);
    UpdateWindow(hWnd);
+
+   DetectDisplayMonitors(); // 检测显示器信息
 
    return TRUE;
 }
