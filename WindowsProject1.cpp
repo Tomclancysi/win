@@ -241,9 +241,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    }
 
    // 创建控件
-   g_hCollectButton = CreateWindowW(L"BUTTON", L"开始收集SMB连接",
+   g_hCollectButton = CreateWindowW(L"BUTTON", L"开始收集SMB连接(端口445)",
        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-       10, 10, 150, 30, hWnd, (HMENU)IDC_COLLECT_BUTTON, hInstance, nullptr);
+       10, 10, 180, 30, hWnd, (HMENU)IDC_COLLECT_BUTTON, hInstance, nullptr);
 
    g_hWarmUpButton = CreateWindowW(L"BUTTON", L"WarmUp连接",
        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
@@ -307,14 +307,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     {
                         // 开始收集
                         g_bCollecting.store(true);
-                        SetWindowTextW(g_hCollectButton, L"停止收集SMB连接");
+                        SetWindowTextW(g_hCollectButton, L"停止收集SMB连接(端口445)");
                         g_collectThread = std::thread(CollectNetworkConnections);
                     }
                     else
                     {
                         // 停止收集
                         g_bCollecting.store(false);
-                        SetWindowTextW(g_hCollectButton, L"开始收集SMB连接");
+                        SetWindowTextW(g_hCollectButton, L"开始收集SMB连接(端口445)");
                         if (g_collectThread.joinable())
                         {
                             g_collectThread.join();
@@ -532,8 +532,8 @@ void CollectNetworkConnections()
                     
                     MIB_TCPROW_OWNER_PID row = pTcpTable->table[i];
                     
-                    // 检查是否为Remote端口443的连接
-                    if (ntohs(row.dwRemotePort) == 443 && row.dwState == MIB_TCP_STATE_ESTAB)
+                    // 检查是否为Remote端口445的连接（SMB协议）
+                    if (ntohs(row.dwRemotePort) == 445 && row.dwState == MIB_TCP_STATE_ESTAB)
                     {
                         std::string ip = IpToString(row.dwRemoteAddr);
                         AddIpToList(ip);
