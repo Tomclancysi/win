@@ -247,7 +247,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    g_hWarmUpButton = CreateWindowW(L"BUTTON", L"WarmUp连接",
        WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
-       170, 10, 150, 30, hWnd, (HMENU)IDC_WARMUP_BUTTON, hInstance, nullptr);
+       200, 10, 150, 30, hWnd, (HMENU)IDC_WARMUP_BUTTON, hInstance, nullptr);
 
    g_hIpList = CreateWindowW(L"LISTBOX", L"",
        WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
