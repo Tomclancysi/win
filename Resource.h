@@ -13,6 +13,9 @@
 #define IDI_SMALL				108
 #define IDC_WINDOWSPROJECT1			109
 #define IDC_MYICON				2
+#define IDC_COLLECT_BUTTON		1001
+#define IDC_WARMUP_BUTTON		1002
+#define IDC_IP_LIST				1003
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 #endif

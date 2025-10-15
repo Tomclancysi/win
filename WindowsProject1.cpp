@@ -1,12 +1,24 @@
 ﻿// WindowsProject1.cpp : 定义应用程序的入口点。
 //
-
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include "framework.h"
 #include "WindowsProject1.h"
 #include <sstream>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <map>
+#include <set>
+#include <iphlpapi.h>
+#include <ws2tcpip.h>
+#include <wininet.h>
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "wininet.lib")
 
 #define MAX_LOADSTRING 100
+
 
 //
 
@@ -37,7 +49,7 @@ void DetectDisplayMonitors()
 	// 输出显示器数量
 	std::wstringstream ss;
 	ss << L"检测到 " << monitors.size() << L" 个显示器\n";
-	OutputDebugString(ss.str().c_str());
+	OutputDebugStringW(ss.str().c_str());
 
 	// 输出每个显示器的信息
 	for (size_t i = 0; i < monitors.size(); ++i)
@@ -60,7 +72,7 @@ void DetectDisplayMonitors()
 		}
 
 		monitorInfo << L"\n";
-		OutputDebugString(monitorInfo.str().c_str());
+		OutputDebugStringW(monitorInfo.str().c_str());
 	}
 }
 
@@ -82,7 +94,7 @@ void DetectDisplayMonitorsSimple()
 		ss << L"主显示器分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
 		ss << L"虚拟屏幕大小: " << virtualWidth << L" x " << virtualHeight << L"\n";
 
-		OutputDebugString(ss.str().c_str());
+		OutputDebugStringW(ss.str().c_str());
 
 		ReleaseDC(NULL, hdc);
 	}
@@ -104,7 +116,7 @@ void GetScreenInfo()
 	ss << L"屏幕分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
 	ss << L"逻辑DPI: " << dpiX << L" x " << dpiY << L"\n";
 
-	OutputDebugString(ss.str().c_str());
+	OutputDebugStringW(ss.str().c_str());
 
 	ReleaseDC(NULL, hdc);
 }
@@ -114,11 +126,30 @@ HINSTANCE hInst;                                // 当前实例
 WCHAR szTitle[MAX_LOADSTRING];                  // 标题栏文本
 WCHAR szWindowClass[MAX_LOADSTRING];            // 主窗口类名
 
+// 网络监控相关全局变量
+HWND g_hCollectButton = nullptr;                // 收集按钮句柄
+HWND g_hWarmUpButton = nullptr;                 // WarmUp按钮句柄
+HWND g_hIpList = nullptr;                       // IP列表控件句柄
+std::atomic<bool> g_bCollecting(false);         // 是否正在收集
+std::atomic<bool> g_bWarmUpRunning(false);      // WarmUp是否运行中
+std::thread g_collectThread;                    // 收集线程
+std::thread g_warmUpThread;                     // WarmUp线程
+std::mutex g_ipListMutex;                       // IP列表互斥锁
+std::set<std::string> g_collectedIPs;           // 收集到的IP集合
+std::vector<std::string> g_warmUpTargets;       // WarmUp目标列表
+
 // 此代码模块中包含的函数的前向声明:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
+
+// 网络监控和WarmUp功能函数声明
+void                CollectNetworkConnections();
+void                WarmUpConnections();
+void                UpdateIpList();
+std::string         IpToString(DWORD ip);
+void                AddIpToList(const std::string& ip);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -202,12 +233,30 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, 
        WS_OVERLAPPEDWINDOW | WS_VSCROLL | WS_HSCROLL,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, 800, 600, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
       return FALSE;
    }
+
+   // 创建控件
+   g_hCollectButton = CreateWindowW(L"BUTTON", L"开始收集SMB连接",
+       WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+       10, 10, 150, 30, hWnd, (HMENU)IDC_COLLECT_BUTTON, hInstance, nullptr);
+
+   g_hWarmUpButton = CreateWindowW(L"BUTTON", L"WarmUp连接",
+       WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
+       170, 10, 150, 30, hWnd, (HMENU)IDC_WARMUP_BUTTON, hInstance, nullptr);
+
+   g_hIpList = CreateWindowW(L"LISTBOX", L"",
+       WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL | LBS_NOTIFY,
+       10, 50, 760, 500, hWnd, (HMENU)IDC_IP_LIST, hInstance, nullptr);
+
+   // 初始化WarmUp目标列表
+   //g_warmUpTargets = {
+   //    "\\\\192.168.1.1\\share",
+   //};
 
    {// 设置scroll range
 	   SetScrollRange(hWnd, SB_VERT, 0, 5, TRUE);
@@ -252,6 +301,48 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_EXIT:
                 DestroyWindow(hWnd);
                 break;
+            case IDC_COLLECT_BUTTON:
+                {
+                    if (!g_bCollecting.load())
+                    {
+                        // 开始收集
+                        g_bCollecting.store(true);
+                        SetWindowTextW(g_hCollectButton, L"停止收集SMB连接");
+                        g_collectThread = std::thread(CollectNetworkConnections);
+                    }
+                    else
+                    {
+                        // 停止收集
+                        g_bCollecting.store(false);
+                        SetWindowTextW(g_hCollectButton, L"开始收集SMB连接");
+                        if (g_collectThread.joinable())
+                        {
+                            g_collectThread.join();
+                        }
+                    }
+                }
+                break;
+            case IDC_WARMUP_BUTTON:
+                {
+                    if (!g_bWarmUpRunning.load())
+                    {
+                        // 开始WarmUp
+                        g_bWarmUpRunning.store(true);
+                        SetWindowTextW(g_hWarmUpButton, L"停止WarmUp");
+                        g_warmUpThread = std::thread(WarmUpConnections);
+                    }
+                    else
+                    {
+                        // 停止WarmUp
+                        g_bWarmUpRunning.store(false);
+                        SetWindowTextW(g_hWarmUpButton, L"WarmUp连接");
+                        if (g_warmUpThread.joinable())
+                        {
+                            g_warmUpThread.join();
+                        }
+                    }
+                }
+                break;
             default:
                 return DefWindowProc(hWnd, message, wParam, lParam);
             }
@@ -277,8 +368,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			// debug print centerX, centerY, radius
 			wchar_t buf[100];
-			wsprintf(buf, L"centerX=%d, centerY=%d, radius=%d\n", centerX, centerY, radius);
-			OutputDebugString(buf);
+			swprintf_s(buf, L"centerX=%d, centerY=%d, radius=%d\n", centerX, centerY, radius);
+			OutputDebugStringW(buf);
 
             // 1. 画脸部（黄色填充圆）
             HBRUSH hBrushFace = CreateSolidBrush(RGB(255, 255, 0));
@@ -320,6 +411,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_DESTROY:
+        {
+            // 停止所有线程
+            g_bCollecting.store(false);
+            g_bWarmUpRunning.store(false);
+            
+            if (g_collectThread.joinable())
+            {
+                g_collectThread.join();
+            }
+            if (g_warmUpThread.joinable())
+            {
+                g_warmUpThread.join();
+            }
+        }
         PostQuitMessage(0);
         break;
     case WM_VSCROLL:
@@ -362,6 +467,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     }
         break;
+    case WM_USER + 1:
+        {
+            // 更新IP列表显示
+            UpdateIpList();
+        }
+        break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
@@ -386,4 +497,152 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
     return (INT_PTR)FALSE;
+}
+
+// 网络连接收集功能实现
+void CollectNetworkConnections()
+{
+    while (g_bCollecting.load())
+    {
+        try
+        {
+            MIB_TCPTABLE_OWNER_PID* pTcpTable = nullptr;
+            DWORD dwSize = 0;
+            DWORD dwRetVal = 0;
+
+            // 获取所需缓冲区大小
+            dwRetVal = GetExtendedTcpTable(pTcpTable, &dwSize, TRUE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+            if (dwRetVal == ERROR_INSUFFICIENT_BUFFER)
+            {
+                pTcpTable = (MIB_TCPTABLE_OWNER_PID*)malloc(dwSize);
+                if (pTcpTable == nullptr)
+                {
+                    Sleep(1000);
+                    continue;
+                }
+            }
+
+            // 获取TCP表
+            dwRetVal = GetExtendedTcpTable(pTcpTable, &dwSize, TRUE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0);
+            if (dwRetVal == NO_ERROR)
+            {
+                for (DWORD i = 0; i < pTcpTable->dwNumEntries; i++)
+                {
+                    if (!g_bCollecting.load()) break; // 检查是否应该停止
+                    
+                    MIB_TCPROW_OWNER_PID row = pTcpTable->table[i];
+                    
+                    // 检查是否为Remote端口443的连接
+                    if (ntohs(row.dwRemotePort) == 443 && row.dwState == MIB_TCP_STATE_ESTAB)
+                    {
+                        std::string ip = IpToString(row.dwRemoteAddr);
+                        AddIpToList(ip);
+                    }
+                }
+            }
+
+            if (pTcpTable)
+            {
+                free(pTcpTable);
+                pTcpTable = nullptr;
+            }
+        }
+        catch (...)
+        {
+            OutputDebugStringW(L"网络连接收集过程中发生异常\n");
+        }
+
+        // 每2秒检查一次，但允许提前退出
+        for (int i = 0; i < 20 && g_bCollecting.load(); i++)
+        {
+            Sleep(100);
+        }
+    }
+}
+
+// WarmUp连接功能实现
+void WarmUpConnections()
+{
+    while (g_bWarmUpRunning.load())
+    {
+        for (const auto& target : g_warmUpTargets)
+        {
+            if (!g_bWarmUpRunning.load()) break;
+
+            try
+            {
+                // 尝试访问SMB共享
+                WIN32_FIND_DATAW findData;
+                std::wstring wtarget(target.begin(), target.end());
+                HANDLE hFind = FindFirstFileW(wtarget.c_str(), &findData);
+                
+                if (hFind != INVALID_HANDLE_VALUE)
+                {
+                    FindClose(hFind);
+                    OutputDebugStringW((L"WarmUp成功: " + wtarget + L"\n").c_str());
+                }
+                else
+                {
+                    DWORD error = GetLastError();
+                    // 只记录非预期的错误（如网络不可达等）
+                    if (error != ERROR_PATH_NOT_FOUND && error != ERROR_BAD_NETPATH)
+                    {
+                        OutputDebugStringW((L"WarmUp失败: " + wtarget + L" 错误: " + std::to_wstring(error) + L"\n").c_str());
+                    }
+                }
+            }
+            catch (...)
+            {
+                OutputDebugStringW((L"WarmUp异常: " + std::wstring(target.begin(), target.end()) + L"\n").c_str());
+            }
+
+            // 每个目标间隔5秒，但允许提前退出
+            for (int i = 0; i < 50 && g_bWarmUpRunning.load(); i++)
+            {
+                Sleep(100);
+            }
+        }
+        
+        // 一轮结束后等待30秒，但允许提前退出
+        for (int i = 0; i < 300 && g_bWarmUpRunning.load(); i++)
+        {
+            Sleep(100);
+        }
+    }
+}
+
+// 更新IP列表显示
+void UpdateIpList()
+{
+    if (g_hIpList)
+    {
+        SendMessageW(g_hIpList, LB_RESETCONTENT, 0, 0);
+        
+        std::lock_guard<std::mutex> lock(g_ipListMutex);
+        for (const auto& ip : g_collectedIPs)
+        {
+            std::wstring wip(ip.begin(), ip.end());
+            SendMessageW(g_hIpList, LB_ADDSTRING, 0, (LPARAM)wip.c_str());
+        }
+    }
+}
+
+// IP地址转换为字符串
+std::string IpToString(DWORD ip)
+{
+    struct in_addr addr;
+    addr.s_addr = ip;
+    return std::string(inet_ntoa(addr));
+}
+
+// 添加IP到列表
+void AddIpToList(const std::string& ip)
+{
+    std::lock_guard<std::mutex> lock(g_ipListMutex);
+    if (g_collectedIPs.find(ip) == g_collectedIPs.end())
+    {
+        g_collectedIPs.insert(ip);
+        // 使用PostMessage通知主线程更新UI
+        PostMessageW(GetParent(g_hIpList), WM_USER + 1, 0, 0);
+    }
 }
