@@ -10,15 +10,221 @@
 #include <atomic>
 #include <map>
 #include <set>
+#include <chrono>
+#include <iomanip>
+#include <ctime>
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 #include <wininet.h>
+#include <cstdarg>
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "wininet.lib")
 
 #define MAX_LOADSTRING 100
 
+// UNC路径工具函数
+namespace UNCHelper
+{
+    // 判断一个路径是否是UNC share root (格式: \\server\share)
+    bool IsUNCShareRoot(const std::wstring& path)
+    {
+        if (path.length() < 5) return false; // 最短UNC路径: \\a\b
+        
+        // 必须以\\开头
+        if (path[0] != L'\\' || path[1] != L'\\') return false;
+        
+        // 查找第一个\的位置（服务器名结束）
+        size_t firstSlash = path.find(L'\\', 2);
+        if (firstSlash == std::wstring::npos) return false;
+        
+        // 查找第二个\的位置（共享名结束）
+        size_t secondSlash = path.find(L'\\', firstSlash + 1);
+        
+        // 如果没有第二个\，说明是share root
+        return secondSlash == std::wstring::npos;
+    }
+    
+    // 提取路径中的share root (返回 \\server\share)
+    std::wstring ExtractShareRoot(const std::wstring& path)
+    {
+        if (path.length() < 5) return L""; // 最短UNC路径: \\a\b
+        
+        // 必须以\\开头
+        if (path[0] != L'\\' || path[1] != L'\\') return L"";
+        
+        // 查找第二个\的位置
+        size_t firstSlash = path.find(L'\\', 2);
+        if (firstSlash == std::wstring::npos) return L"";
+        
+        size_t secondSlash = path.find(L'\\', firstSlash + 1);
+        
+        // 如果没有第二个\，说明本身就是share root
+        if (secondSlash == std::wstring::npos)
+        {
+            return path;
+        }
+        
+        // 返回 \\server\share 部分
+        return path.substr(0, secondSlash);
+    }
+}
+
+// 字符串转换工具函数
+namespace StringHelper
+{
+    // 将std::string转换为std::wstring
+    std::wstring StringToWString(const std::string& str)
+    {
+        if (str.empty()) return L"";
+        int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+        std::wstring wstr(size - 1, 0);
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size);
+        return wstr;
+    }
+    
+    // 将std::wstring转换为std::string
+    std::string WStringToString(const std::wstring& wstr)
+    {
+        if (wstr.empty()) return "";
+        int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        std::string str(size - 1, 0);
+        WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], size, nullptr, nullptr);
+        return str;
+    }
+}
+
+namespace DebugHelper
+{
+    // 输出调试信息（支持格式化）
+    void DebugPrint(const std::wstring& message)
+    {
+        OutputDebugStringW((message + L"\n").c_str());
+    }
+    
+    // 输出调试信息（支持格式化参数）
+    void DebugPrintf(const wchar_t* format, ...)
+    {
+        wchar_t buffer[1024];
+        va_list args;
+        va_start(args, format);
+        vswprintf_s(buffer, format, args);
+        va_end(args);
+        OutputDebugStringW(buffer);
+    }
+
+    class Logger
+    {
+    public:
+        Logger(const char* file, int line)
+            : _file(file), _line(line)
+        {
+            // 获取当前系统时间
+            auto now = std::chrono::system_clock::now();
+            std::time_t t = std::chrono::system_clock::to_time_t(now);
+            struct tm local_tm;
+            localtime_s(&local_tm, &t);
+            std::wostringstream oss;
+            oss << L"["
+                << StringHelper::StringToWString(std::string(_file)) << L" "
+                << _line << L" "
+                << std::put_time(&local_tm, L"%H:%M:%S")
+                << L"] ";
+            _prefix = oss.str();
+        }
+
+        ~Logger()
+        {
+            std::wstring fullMsg = _prefix + _ss.str() + L"\n";
+            OutputDebugStringW(fullMsg.c_str());
+        }
+
+        template <typename T>
+        Logger& operator<<(const T& value)
+        {
+            _ss << value;
+            return *this;
+        }
+
+    private:
+        const char* _file;
+        int _line;
+        std::wostringstream _ss;
+        std::wstring _prefix;
+    };
+}
+
+// 用法: LOG_INFO << L"abc" << 123 << ...;
+#define LOG_INFO DebugHelper::Logger(__FILE__, __LINE__)
+
+// Logger使用示例：
+// LOG_INFO << L"这是一条调试信息";
+// LOG_INFO << L"变量值: " << variable << L", 状态: " << status;
+// LOG_INFO << L"连接成功，IP: " << ipAddress;
+
+// 网络连接测试工具函数
+namespace NetworkHelper
+{
+    // 测试UNC路径连接性
+    bool TestUNCConnection(const std::wstring& uncPath)
+    {
+        try
+        {
+            DWORD attributes = GetFileAttributesW(uncPath.c_str());
+            return attributes != INVALID_FILE_ATTRIBUTES;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+    
+    // 获取连接错误描述
+    std::wstring GetConnectionErrorString(DWORD error)
+    {
+        switch (error)
+        {
+        case ERROR_PATH_NOT_FOUND:
+            return L"路径未找到";
+        case ERROR_BAD_NETPATH:
+            return L"网络路径错误";
+        case ERROR_ACCESS_DENIED:
+            return L"访问被拒绝";
+        case ERROR_NETWORK_UNREACHABLE:
+            return L"网络不可达";
+        case ERROR_HOST_UNREACHABLE:
+            return L"主机不可达";
+        case ERROR_CONNECTION_REFUSED:
+            return L"连接被拒绝";
+        default:
+            return L"未知错误: " + std::to_wstring(error);
+        }
+    }
+}
+
+// 线程同步工具函数
+namespace ThreadHelper
+{
+    // 可中断的等待函数
+    void InterruptibleSleep(int milliseconds, const std::atomic<bool>& shouldStop)
+    {
+        int steps = milliseconds / 100;
+        for (int i = 0; i < steps && !shouldStop.load(); i++)
+        {
+            Sleep(100);
+        }
+    }
+    
+    // 安全地停止线程
+    void SafeStopThread(std::thread& thread, std::atomic<bool>& flag)
+    {
+        flag.store(false);
+        if (thread.joinable())
+        {
+            thread.join();
+        }
+    }
+}
 
 //
 
@@ -47,9 +253,7 @@ void DetectDisplayMonitors()
 	EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, reinterpret_cast<LPARAM>(&monitors));
 
 	// 输出显示器数量
-	std::wstringstream ss;
-	ss << L"检测到 " << monitors.size() << L" 个显示器\n";
-	OutputDebugStringW(ss.str().c_str());
+	LOG_INFO << L"检测到 " << monitors.size() << L" 个显示器";
 
 	// 输出每个显示器的信息
 	for (size_t i = 0; i < monitors.size(); ++i)
@@ -72,7 +276,7 @@ void DetectDisplayMonitors()
 		}
 
 		monitorInfo << L"\n";
-		OutputDebugStringW(monitorInfo.str().c_str());
+		LOG_INFO << monitorInfo.str();
 	}
 }
 
@@ -89,12 +293,9 @@ void DetectDisplayMonitorsSimple()
 		int virtualHeight = GetSystemMetrics(SM_CYVIRTUALSCREEN);
 		int monitorCount = GetSystemMetrics(SM_CMONITORS);
 
-		std::wstringstream ss;
-		ss << L"显示器数量: " << monitorCount << L"\n";
-		ss << L"主显示器分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
-		ss << L"虚拟屏幕大小: " << virtualWidth << L" x " << virtualHeight << L"\n";
-
-		OutputDebugStringW(ss.str().c_str());
+		LOG_INFO << L"显示器数量: " << monitorCount;
+		LOG_INFO << L"主显示器分辨率: " << screenWidth << L" x " << screenHeight;
+		LOG_INFO << L"虚拟屏幕大小: " << virtualWidth << L" x " << virtualHeight;
 
 		ReleaseDC(NULL, hdc);
 	}
@@ -112,11 +313,8 @@ void GetScreenInfo()
 	int dpiX = GetDeviceCaps(hdc, LOGPIXELSX);        // 96
 	int dpiY = GetDeviceCaps(hdc, LOGPIXELSY);        // 96
 
-	std::wstringstream ss;
-	ss << L"屏幕分辨率: " << screenWidth << L" x " << screenHeight << L"\n";
-	ss << L"逻辑DPI: " << dpiX << L" x " << dpiY << L"\n";
-
-	OutputDebugStringW(ss.str().c_str());
+	LOG_INFO << L"屏幕分辨率: " << screenWidth << L" x " << screenHeight;
+	LOG_INFO << L"逻辑DPI: " << dpiX << L" x " << dpiY;
 
 	ReleaseDC(NULL, hdc);
 }
@@ -367,9 +565,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		    centerY -= vScrollPos * 20;
 
 			// debug print centerX, centerY, radius
-			wchar_t buf[100];
-			swprintf_s(buf, L"centerX=%d, centerY=%d, radius=%d\n", centerX, centerY, radius);
-			OutputDebugStringW(buf);
+			LOG_INFO << L"centerX=" << centerX << L", centerY=" << centerY << L", radius=" << radius;
 
             // 1. 画脸部（黄色填充圆）
             HBRUSH hBrushFace = CreateSolidBrush(RGB(255, 255, 0));
@@ -549,7 +745,7 @@ void CollectNetworkConnections()
         }
         catch (...)
         {
-            OutputDebugStringW(L"网络连接收集过程中发生异常\n");
+            LOG_INFO << L"网络连接收集过程中发生异常";
         }
 
         // 每2秒检查一次，但允许提前退出
@@ -572,14 +768,12 @@ void WarmUpConnections()
             try
             {
                 // 尝试访问SMB共享
-                WIN32_FIND_DATAW findData;
                 std::wstring wtarget(target.begin(), target.end());
-                HANDLE hFind = FindFirstFileW(wtarget.c_str(), &findData);
+                DWORD attributes = GetFileAttributesW(wtarget.c_str());
                 
-                if (hFind != INVALID_HANDLE_VALUE)
+                if (attributes != INVALID_FILE_ATTRIBUTES)
                 {
-                    FindClose(hFind);
-                    OutputDebugStringW((L"WarmUp成功: " + wtarget + L"\n").c_str());
+                    LOG_INFO << L"WarmUp成功: " << wtarget;
                 }
                 else
                 {
@@ -587,13 +781,13 @@ void WarmUpConnections()
                     // 只记录非预期的错误（如网络不可达等）
                     if (error != ERROR_PATH_NOT_FOUND && error != ERROR_BAD_NETPATH)
                     {
-                        OutputDebugStringW((L"WarmUp失败: " + wtarget + L" 错误: " + std::to_wstring(error) + L"\n").c_str());
+                        LOG_INFO << L"WarmUp失败: " << wtarget << L" 错误: " << std::to_wstring(error);
                     }
                 }
             }
             catch (...)
             {
-                OutputDebugStringW((L"WarmUp异常: " + std::wstring(target.begin(), target.end()) + L"\n").c_str());
+                LOG_INFO << L"WarmUp异常: " << std::wstring(target.begin(), target.end());
             }
 
             // 每个目标间隔5秒，但允许提前退出
